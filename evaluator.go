@@ -145,14 +145,8 @@ func (e BasicEvaluator) EvaluateRangeIter(input *pb.EvaluateInput) *pb.EvaluateO
 		result := []*pb.Value{}
 		for i, c := range []rune(inVal.Value.Str) {
 			st := input.DefStack
-			st = Register(st, ConstructNode(forPos.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(forPos.Value.Str),
-				"value": NumValue(float64(i)),
-			})))
-			st = Register(st, ConstructNode(forElem.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(forElem.Value.Str),
-				"value": StrValue(string(c)),
-			})))
+			st = Register(st, NewFunDef(forPos.Path, forPos.Value.Str, NumValue(float64(i))))
+			st = Register(st, NewFunDef(forElem.Path, forElem.Value.Str, StrValue(string(c))))
 			if if_, ok := input.Expr.Object["if"]; ok {
 				ifVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: if_})
 				if ifVal.Status != pb.EvaluateOutput_OK {
@@ -174,16 +168,10 @@ func (e BasicEvaluator) EvaluateRangeIter(input *pb.EvaluateInput) *pb.EvaluateO
 		return &pb.EvaluateOutput{Value: ArrValue(result)}
 	case pb.Value_ARR:
 		result := []*pb.Value{}
-		for i, elem := range inVal.Value.Arr {
+		for i, elemVal := range inVal.Value.Arr {
 			st := input.DefStack
-			st = Register(st, ConstructNode(forPos.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(forPos.Value.Str),
-				"value": NumValue(float64(i)),
-			})))
-			st = Register(st, ConstructNode(forElem.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(forElem.Value.Str),
-				"value": ObjValue(map[string]*pb.Value{"json": elem}),
-			})))
+			st = Register(st, NewFunDef(forPos.Path, forPos.Value.Str, NumValue(float64(i))))
+			st = Register(st, NewFunDef(forElem.Path, forElem.Value.Str, elemVal))
 			if if_, ok := input.Expr.Object["if"]; ok {
 				ifVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: if_})
 				if ifVal.Status != pb.EvaluateOutput_OK {
@@ -207,14 +195,8 @@ func (e BasicEvaluator) EvaluateRangeIter(input *pb.EvaluateInput) *pb.EvaluateO
 		result := map[string]*pb.Value{}
 		for _, key := range sortedKeys(inVal.Value.Obj) {
 			st := input.DefStack
-			st = Register(st, ConstructNode(forPos.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(forPos.Value.Str),
-				"value": StrValue(key),
-			})))
-			st = Register(st, ConstructNode(forElem.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(forElem.Value.Str),
-				"value": ObjValue(map[string]*pb.Value{"json": inVal.Value.Obj[key]}),
-			})))
+			st = Register(st, NewFunDef(forPos.Path, forPos.Value.Str, StrValue(key)))
+			st = Register(st, NewFunDef(forElem.Path, forElem.Value.Str, inVal.Value.Obj[key]))
 			if if_, ok := input.Expr.Object["if"]; ok {
 				ifVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: if_})
 				if ifVal.Status != pb.EvaluateOutput_OK {
@@ -317,10 +299,7 @@ func (e BasicEvaluator) EvaluateFunCall(input *pb.EvaluateInput) *pb.EvaluateOut
 			if argVal.Status != pb.EvaluateOutput_OK {
 				return argVal
 			}
-			st = Register(st, ConstructNode(argExpr.Path, ObjValue(map[string]*pb.Value{
-				"def":   StrValue(argName.Value.Str),
-				"value": ObjValue(map[string]*pb.Value{"json": argVal.Value}),
-			})))
+			st = Register(st, NewFunDef(argExpr.Path, argName.Value.Str, argVal.Value))
 		}
 	}
 	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: funDef.Object["value"]})
