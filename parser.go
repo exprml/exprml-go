@@ -28,6 +28,8 @@ func (p parser) Parse(input *pb.ParseInput) *pb.ParseOutput {
 	return &pb.ParseOutput{Expr: expr}
 }
 
+var identRegexp = regexp.MustCompile(`^[_a-zA-Z][_a-zA-Z0-9]*$`)
+
 func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 	expr = &pb.Expr{Path: path, Value: value}
 	switch value.Type {
@@ -38,7 +40,7 @@ func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 		switch {
 		default:
 			return nil, fmt.Errorf("invalid Scalar: %v: string literal must enclosed by '`'", Format(path))
-		case len(s) > 1 && strings.HasPrefix(s, "$"):
+		case identRegexp.MatchString(s):
 			expr.Kind = pb.Expr_REF
 			expr.Ref = &pb.Ref{Ident: s}
 			return expr, nil
@@ -138,6 +140,9 @@ func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 			return expr, nil
 		case hasKey(value, "json"):
 			expr.Kind = pb.Expr_JSON
+			if err := checkNonNull(value.Obj["json"]); err != nil {
+				return nil, fmt.Errorf("invalid Json: %v: 'json' property cannot contain null", Format(Append(path, "json")))
+			}
 			expr.Json = &pb.Json{Json: value.Obj["json"]}
 			return expr, nil
 		case hasKey(value, "do"):
@@ -314,9 +319,8 @@ func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 				}
 				return expr, nil
 			}
-			r := regexp.MustCompile(`^\$[_a-zA-Z][_a-zA-Z0-9]*$`)
-			if !r.MatchString(prop) {
-				return nil, fmt.Errorf("invalid Call: %v: function call property %q must match %q", Format(path), prop, r.String())
+			if !identRegexp.MatchString(prop) {
+				return nil, fmt.Errorf("invalid Call: %v: function call property %q must match %q", Format(path), prop, identRegexp.String())
 			}
 			args := value.Obj[prop]
 			if args.Type != pb.Value_OBJ {
@@ -327,6 +331,9 @@ func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 			expr.Call = &pb.Call{Ident: prop}
 			expr.Call.Args = map[string]*pb.Expr{}
 			for key, val := range args.Obj {
+				if !identRegexp.MatchString(key) {
+					return nil, fmt.Errorf("invalid Call: %v: argument property %q must match %q", Format(Append(path, prop, key)), key, identRegexp.String())
+				}
 				expr.Call.Args[key], err = parse(Append(path, prop, key), val)
 				if err != nil {
 					return nil, err
@@ -343,4 +350,21 @@ func hasKey(v *pb.Value, key string) bool {
 	}
 	_, ok := v.Obj[key]
 	return ok
+}
+
+func checkNonNull(value *pb.Value) error {
+	if value.Type == pb.Value_NULL {
+		return fmt.Errorf("null value is not allowed")
+	}
+	for _, v := range value.Obj {
+		if err := checkNonNull(v); err != nil {
+			return err
+		}
+	}
+	for _, v := range value.Arr {
+		if err := checkNonNull(v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
