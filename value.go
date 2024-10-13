@@ -1,6 +1,9 @@
 package exprml
 
-import pb "github.com/exprml/exprml-go/pb/exprml/v1"
+import (
+	pb "github.com/exprml/exprml-go/pb/exprml/v1"
+	"slices"
+)
 
 func ObjValue(obj map[string]*pb.Value) *pb.Value {
 	return &pb.Value{Type: pb.Value_OBJ, Obj: obj}
@@ -20,4 +23,16 @@ func NumValue(num float64) *pb.Value {
 
 func BoolValue(b bool) *pb.Value {
 	return &pb.Value{Type: pb.Value_BOOL, Bool: b}
+}
+
+func Keys(value *pb.Value) []string {
+	if value.Type != pb.Value_OBJ {
+		return nil
+	}
+	var keys []string
+	for k := range value.Obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }

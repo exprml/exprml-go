@@ -19,7 +19,7 @@ func TestEvaluator_Evaluate(t *testing.T) {
 		WantError bool
 	}
 	testcases := map[string]*Testcase{}
-	err := filepath.Walk("testdata", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk("testdata/evaluator", func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
@@ -82,7 +82,7 @@ func TestEvaluator_Evaluate(t *testing.T) {
 			parseResult := exprml.NewParser().Parse(&pb.ParseInput{Value: decodeResult.Value})
 			require.False(t, parseResult.IsError)
 
-			got := exprml.NewEvaluator().EvaluateExpr(&pb.EvaluateInput{Expr: parseResult.Node})
+			got := exprml.NewEvaluator().EvaluateExpr(&pb.EvaluateInput{Expr: parseResult.Expr})
 			if testcase.WantError {
 				require.NotEqual(t, got.Status, pb.EvaluateOutput_OK)
 			} else {
