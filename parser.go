@@ -28,7 +28,7 @@ func (p parser) Parse(input *pb.ParseInput) *pb.ParseOutput {
 	return &pb.ParseOutput{Expr: expr}
 }
 
-var identRegexp = regexp.MustCompile(`^[_a-zA-Z][_a-zA-Z0-9]*$`)
+var identRegexp = regexp.MustCompile(`^\$[_a-zA-Z][_a-zA-Z0-9]*$`)
 
 func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 	expr = &pb.Expr{Path: path, Value: value}
@@ -132,7 +132,7 @@ func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 			arr := value.Obj["arr"].Arr
 			expr.Arr = &pb.Arr{Arr: make([]*pb.Expr, len(arr))}
 			for i, val := range arr {
-				expr.Arr.Arr[i], err = parse(Append(path, "arr", fmt.Sprintf("%v", i)), val)
+				expr.Arr.Arr[i], err = parse(Append(path, "arr", i), val)
 				if err != nil {
 					return nil, err
 				}
@@ -281,11 +281,11 @@ func parse(path *pb.Expr_Path, value *pb.Value) (expr *pb.Expr, err error) {
 				if len(value.Obj[prop].Arr) != 2 {
 					return nil, fmt.Errorf("invalid OpBinary: %v: '%v' property must contain two elements", Format(Append(path, prop)), prop)
 				}
-				expr.OpBinary.Left, err = parse(Append(path, prop), value.Obj[prop].Arr[0])
+				expr.OpBinary.Left, err = parse(Append(path, prop, 0), value.Obj[prop].Arr[0])
 				if err != nil {
 					return nil, err
 				}
-				expr.OpBinary.Right, err = parse(Append(path, prop), value.Obj[prop].Arr[1])
+				expr.OpBinary.Right, err = parse(Append(path, prop, 1), value.Obj[prop].Arr[1])
 				if err != nil {
 					return nil, err
 				}

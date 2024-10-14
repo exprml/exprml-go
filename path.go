@@ -9,19 +9,20 @@ func Append(path *pb.Expr_Path, pos ...any) *pb.Expr_Path {
 	if path == nil {
 		path = &pb.Expr_Path{}
 	}
+	out := &pb.Expr_Path{Pos: append([]*pb.Expr_Path_Pos{}, path.Pos...)}
 	for _, pos := range pos {
 		switch pos := pos.(type) {
 		default:
 			panic("pos must be int or string")
 		case int:
-			path.Pos = append(path.Pos, &pb.Expr_Path_Pos{Index: int64(pos)})
+			out.Pos = append(out.Pos, &pb.Expr_Path_Pos{Index: int64(pos)})
 		case int64:
-			path.Pos = append(path.Pos, &pb.Expr_Path_Pos{Index: pos})
+			out.Pos = append(out.Pos, &pb.Expr_Path_Pos{Index: pos})
 		case string:
-			path.Pos = append(path.Pos, &pb.Expr_Path_Pos{Key: pos})
+			out.Pos = append(out.Pos, &pb.Expr_Path_Pos{Key: pos})
 		}
 	}
-	return path
+	return out
 }
 
 func Format(path *pb.Expr_Path) string {
