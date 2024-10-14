@@ -2,16 +2,23 @@ package exprml_test
 
 import (
 	"fmt"
+
 	"github.com/exprml/exprml-go"
 	pb "github.com/exprml/exprml-go/pb/exprml/v1"
 )
 
 func ExampleEvaluator() {
+	// ExprML source code in YAML format
 	source := "cat: ['`Hello`', '`, `', '`ExprML`', '`!`']"
+	// Decode YAML source
 	decoded := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: source})
+	// Parse as an AST of an expression
 	parsed := exprml.NewParser().Parse(&pb.ParseInput{Value: decoded.Value})
+	// Evaluate parsed expression
 	evaluated := exprml.NewEvaluator(nil).EvaluateExpr(&pb.EvaluateInput{Expr: parsed.Expr})
+	// Encode evaluated result
 	encoded := exprml.NewEncoder().Encode(&pb.EncodeInput{Value: evaluated.Value})
+
 	fmt.Println(encoded.Result)
 	// Output: Hello, ExprML!
 }
