@@ -25,47 +25,86 @@ type Evaluator interface {
 	EvaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutput
 }
 
-func NewEvaluator() Evaluator {
-	return &BasicEvaluator{}
+func NewEvaluator(config *EvaluatorConfig) Evaluator {
+	e := &evaluator{
+		config: EvaluatorConfig{
+			Extension:      map[string]func(path *pb.Expr_Path, args map[string]*pb.Value) *pb.EvaluateOutput{},
+			BeforeEvaluate: func(input *pb.EvaluateInput) error { return nil },
+			AfterEvaluate:  func(input *pb.EvaluateInput, output *pb.EvaluateOutput) error { return nil },
+		},
+	}
+	if config != nil && config.Extension != nil {
+		e.config.Extension = config.Extension
+	}
+	if config != nil && config.BeforeEvaluate != nil {
+		e.config.BeforeEvaluate = config.BeforeEvaluate
+	}
+	if config != nil && config.AfterEvaluate != nil {
+		e.config.AfterEvaluate = config.AfterEvaluate
+	}
+	return e
 }
 
-type BasicEvaluator struct{}
+type EvaluatorConfig struct {
+	Extension      map[string]func(path *pb.Expr_Path, args map[string]*pb.Value) *pb.EvaluateOutput
+	BeforeEvaluate func(input *pb.EvaluateInput) error
+	AfterEvaluate  func(input *pb.EvaluateInput, output *pb.EvaluateOutput) error
+}
+type evaluator struct {
+	config EvaluatorConfig
+}
 
-func (e BasicEvaluator) EvaluateExpr(input *pb.EvaluateInput) *pb.EvaluateOutput {
-	n := input.Expr
-	switch n.Kind {
+func (e evaluator) EvaluateExpr(input *pb.EvaluateInput) (output *pb.EvaluateOutput) {
+	if err := e.config.BeforeEvaluate(input); err != nil {
+		return &pb.EvaluateOutput{
+			Status:       pb.EvaluateOutput_UNKNOWN_ERROR,
+			ErrorPath:    input.Expr.Path,
+			ErrorMessage: fmt.Sprintf("BeforeEvaluate failed: %s", err.Error()),
+		}
+	}
+
+	switch input.Expr.Kind {
 	default:
 		panic("given expression must be validated")
 	case pb.Expr_EVAL:
-		return e.EvaluateEval(input)
+		output = e.EvaluateEval(input)
 	case pb.Expr_SCALAR:
-		return e.EvaluateScalar(input)
+		output = e.EvaluateScalar(input)
 	case pb.Expr_REF:
-		return e.EvaluateRef(input)
+		output = e.EvaluateRef(input)
 	case pb.Expr_OBJ:
-		return e.EvaluateObj(input)
+		output = e.EvaluateObj(input)
 	case pb.Expr_ARR:
-		return e.EvaluateArr(input)
+		output = e.EvaluateArr(input)
 	case pb.Expr_JSON:
-		return e.EvaluateJson(input)
+		output = e.EvaluateJson(input)
 	case pb.Expr_ITER:
-		return e.EvaluateIter(input)
+		output = e.EvaluateIter(input)
 	case pb.Expr_ELEM:
-		return e.EvaluateElem(input)
+		output = e.EvaluateElem(input)
 	case pb.Expr_CALL:
-		return e.EvaluateCall(input)
+		output = e.EvaluateCall(input)
 	case pb.Expr_CASES:
-		return e.EvaluateCases(input)
+		output = e.EvaluateCases(input)
 	case pb.Expr_OP_UNARY:
-		return e.EvaluateOpUnary(input)
+		output = e.EvaluateOpUnary(input)
 	case pb.Expr_OP_BINARY:
-		return e.EvaluateOpBinary(input)
+		output = e.EvaluateOpBinary(input)
 	case pb.Expr_OP_VARIADIC:
-		return e.EvaluateOpVariadic(input)
+		output = e.EvaluateOpVariadic(input)
 	}
+
+	if err := e.config.AfterEvaluate(input, output); err != nil {
+		return &pb.EvaluateOutput{
+			Status:       pb.EvaluateOutput_UNKNOWN_ERROR,
+			ErrorPath:    input.Expr.Path,
+			ErrorMessage: fmt.Sprintf("AfterEvaluate failed: %s", err.Error()),
+		}
+	}
+	return output
 }
 
-func (e BasicEvaluator) EvaluateEval(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateEval(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	st := input.DefStack
 	where := input.Expr.Eval.Where
 	for _, def := range where {
@@ -74,11 +113,11 @@ func (e BasicEvaluator) EvaluateEval(input *pb.EvaluateInput) *pb.EvaluateOutput
 	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: input.Expr.Eval.Eval})
 }
 
-func (e BasicEvaluator) EvaluateScalar(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateScalar(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	return &pb.EvaluateOutput{Value: input.Expr.Scalar.Scalar}
 }
 
-func (e BasicEvaluator) EvaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	result := map[string]*pb.Value{}
 	for pos, expr := range input.Expr.Obj.Obj {
 		val := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: expr})
@@ -90,8 +129,8 @@ func (e BasicEvaluator) EvaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput 
 	return &pb.EvaluateOutput{Value: ObjValue(result)}
 }
 
-func (e BasicEvaluator) EvaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput {
-	result := []*pb.Value{}
+func (e evaluator) EvaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput {
+	var result []*pb.Value
 	for _, expr := range input.Expr.Arr.Arr {
 		val := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: expr})
 		if val.Status != pb.EvaluateOutput_OK {
@@ -102,11 +141,11 @@ func (e BasicEvaluator) EvaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput 
 	return &pb.EvaluateOutput{Value: ArrValue(result)}
 }
 
-func (e BasicEvaluator) EvaluateJson(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateJson(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	return &pb.EvaluateOutput{Value: input.Expr.Json.Json}
 }
 
-func (e BasicEvaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	iter := input.Expr.Iter
 	forPos, forElem := iter.PosIdent, iter.ElemIdent
 	inVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: iter.Col})
@@ -114,7 +153,7 @@ func (e BasicEvaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput
 	default:
 		return errorUnexpectedType(iter.Col.Path, inVal.Value.Type, []pb.Value_Type{pb.Value_ARR, pb.Value_OBJ})
 	case pb.Value_STR:
-		result := []*pb.Value{}
+		var result []*pb.Value
 		for i, c := range []rune(inVal.Value.Str) {
 			st := input.DefStack
 			st = Register(st, NewDefinition(input.Expr.Path, forPos, NumValue(float64(i))))
@@ -139,7 +178,7 @@ func (e BasicEvaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput
 		}
 		return &pb.EvaluateOutput{Value: ArrValue(result)}
 	case pb.Value_ARR:
-		result := []*pb.Value{}
+		var result []*pb.Value
 		for i, elemVal := range inVal.Value.Arr {
 			st := input.DefStack
 			st = Register(st, NewDefinition(input.Expr.Path, forPos, NumValue(float64(i))))
@@ -191,7 +230,7 @@ func (e BasicEvaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput
 	}
 }
 
-func (e BasicEvaluator) EvaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	elem := input.Expr.Elem
 	getVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem.Get})
 	if getVal.Status != pb.EvaluateOutput_OK {
@@ -243,11 +282,23 @@ func (e BasicEvaluator) EvaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput
 	}
 }
 
-func (e BasicEvaluator) EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	call := input.Expr.Call
 	st := Find(input.DefStack, call.Ident)
 	if st == nil {
-		return errorReferenceNotFound(input.Expr.Path, call.Ident)
+		ext, ok := e.config.Extension[call.Ident]
+		if !ok {
+			return errorReferenceNotFound(input.Expr.Path, call.Ident)
+		}
+		args := map[string]*pb.Value{}
+		for argName, argExpr := range call.Args {
+			argVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: argExpr})
+			if argVal.Status != pb.EvaluateOutput_OK {
+				return argVal
+			}
+			args[argName] = argVal.Value
+		}
+		return ext(input.Expr.Path, args)
 	}
 	def := st.Def
 	for _, argName := range def.Args {
@@ -264,7 +315,7 @@ func (e BasicEvaluator) EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput
 	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: def.Body})
 }
 
-func (e BasicEvaluator) EvaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	cases := input.Expr.Cases.Cases
 	for _, case_ := range cases {
 		if case_.IsOtherwise {
@@ -285,7 +336,7 @@ func (e BasicEvaluator) EvaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutpu
 	return errorCasesNotExhaustive(Append(input.Expr.Path, "cases"))
 }
 
-func (e BasicEvaluator) EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	op := input.Expr.OpUnary
 	o := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Operand})
 	if o.Status != pb.EvaluateOutput_OK {
@@ -315,7 +366,7 @@ func (e BasicEvaluator) EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOut
 		if operand.Type != pb.Value_ARR {
 			return errorUnexpectedType(Append(input.Expr.Path, "flat"), operand.Type, []pb.Value_Type{pb.Value_ARR})
 		}
-		v := []*pb.Value{}
+		var v []*pb.Value
 		for _, elem := range operand.Arr {
 			if elem.Type != pb.Value_ARR {
 				return errorUnexpectedType(Append(input.Expr.Path, "flat"), elem.Type, []pb.Value_Type{pb.Value_ARR})
@@ -341,7 +392,7 @@ func (e BasicEvaluator) EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOut
 	}
 }
 
-func (e BasicEvaluator) EvaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	op := input.Expr.OpBinary
 	ol := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Left})
 	if ol.Status != pb.EvaluateOutput_OK {
@@ -410,9 +461,9 @@ func (e BasicEvaluator) EvaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOu
 	}
 }
 
-func (e BasicEvaluator) EvaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	op := input.Expr.OpVariadic
-	operands := []*pb.Value{}
+	var operands []*pb.Value
 	for _, elem := range op.Operands {
 		val := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem})
 		if val.Status != pb.EvaluateOutput_OK {
@@ -508,11 +559,15 @@ func (e BasicEvaluator) EvaluateOpVariadic(input *pb.EvaluateInput) *pb.Evaluate
 	}
 }
 
-func (e BasicEvaluator) EvaluateRef(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) EvaluateRef(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	ref := input.Expr.Ref
 	st := Find(input.DefStack, ref.Ident)
 	if st == nil {
-		return errorReferenceNotFound(input.Expr.Path, ref.Ident)
+		ext, ok := e.config.Extension[ref.Ident]
+		if !ok {
+			return errorReferenceNotFound(input.Expr.Path, ref.Ident)
+		}
+		return ext(input.Expr.Path, map[string]*pb.Value{})
 	}
 	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: st.Def.Body})
 }
