@@ -5,6 +5,6 @@ The ExprML is a programming language that can evaluate expressions represented i
 
 The language specification is available at https://github.com/exprml/exprml-language .
 
-## Go API documentation
+## API documentation
 
 https://pkg.go.dev/github.com/exprml/exprml-go
