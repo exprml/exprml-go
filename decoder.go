@@ -18,7 +18,7 @@ func NewDecoder() Decoder {
 type decoder struct{}
 
 func (d decoder) Decode(input *pb.DecodeInput) *pb.DecodeOutput {
-	b, err := yaml.YAMLToJSON([]byte(input.Yaml))
+	b, err := yaml.YAMLToJSON([]byte(input.Text))
 	if err != nil {
 		return &pb.DecodeOutput{
 			IsError:      true,

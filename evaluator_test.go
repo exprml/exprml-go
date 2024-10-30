@@ -41,7 +41,7 @@ func TestEvaluator_Evaluate(t *testing.T) {
 			if err != nil {
 				return fmt.Errorf("fail to read file: %+v", err)
 			}
-			want := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: string(b)})
+			want := exprml.NewDecoder().Decode(&pb.DecodeInput{Text: string(b)})
 			if want.IsError {
 				return fmt.Errorf("fail to decode yaml: %+v", want.ErrorMessage)
 			}
@@ -73,13 +73,13 @@ func TestEvaluator_Evaluate(t *testing.T) {
 	for _, name := range testcaseKeys {
 		testcase := testcases[name]
 		t.Run(name, func(t *testing.T) {
-			decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: testcase.YamlInput})
+			decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Text: testcase.YamlInput})
 			require.False(t, decodeResult.IsError)
 
 			parseResult := exprml.NewParser().Parse(&pb.ParseInput{Value: decodeResult.Value})
 			require.False(t, parseResult.IsError)
 
-			got := exprml.NewEvaluator(nil).EvaluateExpr(&pb.EvaluateInput{Expr: parseResult.Expr})
+			got := exprml.NewEvaluator(nil).Evaluate(&pb.EvaluateInput{Expr: parseResult.Expr})
 
 			if testcase.WantError {
 				require.NotEqual(t, pb.EvaluateOutput_OK, got.Status)
@@ -92,7 +92,7 @@ func TestEvaluator_Evaluate(t *testing.T) {
 }
 
 func TestEvaluator_Extension(t *testing.T) {
-	sut := exprml.NewEvaluator(&exprml.EvaluatorConfig{
+	sut := exprml.NewEvaluator(&exprml.Config{
 		Extension: map[string]func(path *pb.Expr_Path, args map[string]*pb.Value) *pb.EvaluateOutput{
 			"$test_func": func(path *pb.Expr_Path, args map[string]*pb.Value) *pb.EvaluateOutput {
 				return &pb.EvaluateOutput{
@@ -133,13 +133,13 @@ func TestEvaluator_Extension(t *testing.T) {
 	for _, name := range testcaseKeys {
 		testcase := testcases[name]
 		t.Run(name, func(t *testing.T) {
-			decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: testcase.YamlInput})
+			decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Text: testcase.YamlInput})
 			require.False(t, decodeResult.IsError)
 
 			parseResult := exprml.NewParser().Parse(&pb.ParseInput{Value: decodeResult.Value})
 			require.False(t, parseResult.IsError)
 
-			got := sut.EvaluateExpr(&pb.EvaluateInput{Expr: parseResult.Expr})
+			got := sut.Evaluate(&pb.EvaluateInput{Expr: parseResult.Expr})
 			if testcase.WantError {
 				require.NotEqual(t, pb.EvaluateOutput_OK, got.Status)
 			} else {
@@ -153,19 +153,19 @@ func TestEvaluator_Extension(t *testing.T) {
 func TestEvaluator_BeforeEvaluate(t *testing.T) {
 	evalPaths := []string{}
 
-	decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: "cat: ['`Hello`', '`, `', '`ExprML`', '`!`']"})
+	decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Text: "cat: ['`Hello`', '`, `', '`ExprML`', '`!`']"})
 	require.False(t, decodeResult.IsError)
 
 	parseResult := exprml.NewParser().Parse(&pb.ParseInput{Value: decodeResult.Value})
 	require.False(t, parseResult.IsError)
 
-	config := &exprml.EvaluatorConfig{
+	config := &exprml.Config{
 		BeforeEvaluate: func(input *pb.EvaluateInput) error {
 			evalPaths = append(evalPaths, exprml.Format(input.Expr.Path))
 			return nil
 		},
 	}
-	result := exprml.NewEvaluator(config).EvaluateExpr(&pb.EvaluateInput{Expr: parseResult.Expr})
+	result := exprml.NewEvaluator(config).Evaluate(&pb.EvaluateInput{Expr: parseResult.Expr})
 	require.Equal(t, pb.EvaluateOutput_OK, result.Status)
 	require.ElementsMatch(t, []string{"/", "/cat/0", "/cat/1", "/cat/2", "/cat/3"}, evalPaths)
 }
@@ -173,19 +173,19 @@ func TestEvaluator_BeforeEvaluate(t *testing.T) {
 func TestEvaluator_AfterEvaluate(t *testing.T) {
 	evalTypes := []pb.Value_Type{}
 
-	decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: "cat: ['`Hello`', '`, `', '`ExprML`', '`!`']"})
+	decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Text: "cat: ['`Hello`', '`, `', '`ExprML`', '`!`']"})
 	require.False(t, decodeResult.IsError)
 
 	parseResult := exprml.NewParser().Parse(&pb.ParseInput{Value: decodeResult.Value})
 	require.False(t, parseResult.IsError)
 
-	config := &exprml.EvaluatorConfig{
+	config := &exprml.Config{
 		AfterEvaluate: func(input *pb.EvaluateInput, output *pb.EvaluateOutput) error {
 			evalTypes = append(evalTypes, output.Value.Type)
 			return nil
 		},
 	}
-	result := exprml.NewEvaluator(config).EvaluateExpr(&pb.EvaluateInput{Expr: parseResult.Expr})
+	result := exprml.NewEvaluator(config).Evaluate(&pb.EvaluateInput{Expr: parseResult.Expr})
 	require.Equal(t, pb.EvaluateOutput_OK, result.Status)
 
 	wantTypes := []pb.Value_Type{pb.Value_STR, pb.Value_STR, pb.Value_STR, pb.Value_STR, pb.Value_STR}

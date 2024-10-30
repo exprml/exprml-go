@@ -9,25 +9,12 @@ import (
 )
 
 type Evaluator interface {
-	EvaluateExpr(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateEval(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateScalar(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateRef(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateJson(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOutput
-	EvaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutput
+	Evaluate(input *pb.EvaluateInput) *pb.EvaluateOutput
 }
 
-func NewEvaluator(config *EvaluatorConfig) Evaluator {
+func NewEvaluator(config *Config) Evaluator {
 	e := &evaluator{
-		config: EvaluatorConfig{
+		config: Config{
 			Extension:      map[string]func(path *pb.Expr_Path, args map[string]*pb.Value) *pb.EvaluateOutput{},
 			BeforeEvaluate: func(input *pb.EvaluateInput) error { return nil },
 			AfterEvaluate:  func(input *pb.EvaluateInput, output *pb.EvaluateOutput) error { return nil },
@@ -45,16 +32,16 @@ func NewEvaluator(config *EvaluatorConfig) Evaluator {
 	return e
 }
 
-type EvaluatorConfig struct {
+type Config struct {
 	Extension      map[string]func(path *pb.Expr_Path, args map[string]*pb.Value) *pb.EvaluateOutput
 	BeforeEvaluate func(input *pb.EvaluateInput) error
 	AfterEvaluate  func(input *pb.EvaluateInput, output *pb.EvaluateOutput) error
 }
 type evaluator struct {
-	config EvaluatorConfig
+	config Config
 }
 
-func (e evaluator) EvaluateExpr(input *pb.EvaluateInput) (output *pb.EvaluateOutput) {
+func (e evaluator) Evaluate(input *pb.EvaluateInput) (output *pb.EvaluateOutput) {
 	if err := e.config.BeforeEvaluate(input); err != nil {
 		return &pb.EvaluateOutput{
 			Status:       pb.EvaluateOutput_UNKNOWN_ERROR,
@@ -67,31 +54,31 @@ func (e evaluator) EvaluateExpr(input *pb.EvaluateInput) (output *pb.EvaluateOut
 	default:
 		panic("given expression must be validated")
 	case pb.Expr_EVAL:
-		output = e.EvaluateEval(input)
+		output = e.evaluateEval(input)
 	case pb.Expr_SCALAR:
-		output = e.EvaluateScalar(input)
+		output = e.evaluateScalar(input)
 	case pb.Expr_REF:
-		output = e.EvaluateRef(input)
+		output = e.evaluateRef(input)
 	case pb.Expr_OBJ:
-		output = e.EvaluateObj(input)
+		output = e.evaluateObj(input)
 	case pb.Expr_ARR:
-		output = e.EvaluateArr(input)
+		output = e.evaluateArr(input)
 	case pb.Expr_JSON:
-		output = e.EvaluateJson(input)
+		output = e.evaluateJson(input)
 	case pb.Expr_ITER:
-		output = e.EvaluateIter(input)
+		output = e.evaluateIter(input)
 	case pb.Expr_ELEM:
-		output = e.EvaluateElem(input)
+		output = e.evaluateElem(input)
 	case pb.Expr_CALL:
-		output = e.EvaluateCall(input)
+		output = e.evaluateCall(input)
 	case pb.Expr_CASES:
-		output = e.EvaluateCases(input)
+		output = e.evaluateCases(input)
 	case pb.Expr_OP_UNARY:
-		output = e.EvaluateOpUnary(input)
+		output = e.evaluateOpUnary(input)
 	case pb.Expr_OP_BINARY:
-		output = e.EvaluateOpBinary(input)
+		output = e.evaluateOpBinary(input)
 	case pb.Expr_OP_VARIADIC:
-		output = e.EvaluateOpVariadic(input)
+		output = e.evaluateOpVariadic(input)
 	}
 
 	if err := e.config.AfterEvaluate(input, output); err != nil {
@@ -104,23 +91,36 @@ func (e evaluator) EvaluateExpr(input *pb.EvaluateInput) (output *pb.EvaluateOut
 	return output
 }
 
-func (e evaluator) EvaluateEval(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateEval(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	st := input.DefStack
 	where := input.Expr.Eval.Where
 	for _, def := range where {
 		st = Register(st, def)
 	}
-	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: input.Expr.Eval.Eval})
+	return e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: input.Expr.Eval.Eval})
 }
 
-func (e evaluator) EvaluateScalar(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateScalar(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	return &pb.EvaluateOutput{Value: input.Expr.Scalar.Scalar}
 }
 
-func (e evaluator) EvaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateRef(input *pb.EvaluateInput) *pb.EvaluateOutput {
+	ref := input.Expr.Ref
+	st := Find(input.DefStack, ref.Ident)
+	if st == nil {
+		ext, ok := e.config.Extension[ref.Ident]
+		if !ok {
+			return errorReferenceNotFound(input.Expr.Path, ref.Ident)
+		}
+		return ext(input.Expr.Path, map[string]*pb.Value{})
+	}
+	return e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: st.Def.Body})
+}
+
+func (e evaluator) evaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	result := map[string]*pb.Value{}
 	for pos, expr := range input.Expr.Obj.Obj {
-		val := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: expr})
+		val := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: expr})
 		if val.Status != pb.EvaluateOutput_OK {
 			return val
 		}
@@ -129,10 +129,10 @@ func (e evaluator) EvaluateObj(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	return &pb.EvaluateOutput{Value: ObjValue(result)}
 }
 
-func (e evaluator) EvaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	var result []*pb.Value
 	for _, expr := range input.Expr.Arr.Arr {
-		val := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: expr})
+		val := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: expr})
 		if val.Status != pb.EvaluateOutput_OK {
 			return val
 		}
@@ -141,17 +141,17 @@ func (e evaluator) EvaluateArr(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	return &pb.EvaluateOutput{Value: ArrValue(result)}
 }
 
-func (e evaluator) EvaluateJson(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateJson(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	return &pb.EvaluateOutput{Value: input.Expr.Json.Json}
 }
 
-func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	iter := input.Expr.Iter
 	forPos, forElem := iter.PosIdent, iter.ElemIdent
-	inVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: iter.Col})
+	inVal := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: iter.Col})
 	switch inVal.Value.Type {
 	default:
-		return errorUnexpectedType(iter.Col.Path, inVal.Value.Type, []pb.Value_Type{pb.Value_ARR, pb.Value_OBJ})
+		return errorUnexpectedType(iter.Col.Path, inVal.Value.Type, []pb.Value_Type{pb.Value_STR, pb.Value_ARR, pb.Value_OBJ})
 	case pb.Value_STR:
 		var result []*pb.Value
 		for i, c := range []rune(inVal.Value.Str) {
@@ -159,7 +159,7 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 			st = Register(st, NewDefinition(input.Expr.Path, forPos, NumValue(float64(i))))
 			st = Register(st, NewDefinition(input.Expr.Path, forElem, StrValue(string(c))))
 			if iter.If != nil {
-				ifVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: iter.If})
+				ifVal := e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: iter.If})
 				if ifVal.Status != pb.EvaluateOutput_OK {
 					return ifVal
 				}
@@ -170,7 +170,7 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 					continue
 				}
 			}
-			v := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: iter.Do})
+			v := e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: iter.Do})
 			if v.Status != pb.EvaluateOutput_OK {
 				return v
 			}
@@ -184,7 +184,7 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 			st = Register(st, NewDefinition(input.Expr.Path, forPos, NumValue(float64(i))))
 			st = Register(st, NewDefinition(input.Expr.Path, forElem, elemVal))
 			if iter.If != nil {
-				ifVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: iter.If})
+				ifVal := e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: iter.If})
 				if ifVal.Status != pb.EvaluateOutput_OK {
 					return ifVal
 				}
@@ -195,7 +195,7 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 					continue
 				}
 			}
-			v := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: iter.Do})
+			v := e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: iter.Do})
 			if v.Status != pb.EvaluateOutput_OK {
 				return v
 			}
@@ -209,7 +209,7 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 			st = Register(st, NewDefinition(input.Expr.Path, forPos, StrValue(key)))
 			st = Register(st, NewDefinition(input.Expr.Path, forElem, inVal.Value.Obj[key]))
 			if iter.If != nil {
-				ifVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: iter.If})
+				ifVal := e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: iter.If})
 				if ifVal.Status != pb.EvaluateOutput_OK {
 					return ifVal
 				}
@@ -220,7 +220,7 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 					continue
 				}
 			}
-			v := e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: iter.Do})
+			v := e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: iter.Do})
 			if v.Status != pb.EvaluateOutput_OK {
 				return v
 			}
@@ -230,14 +230,14 @@ func (e evaluator) EvaluateIter(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	}
 }
 
-func (e evaluator) EvaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	elem := input.Expr.Elem
-	getVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem.Get})
+	getVal := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem.Get})
 	if getVal.Status != pb.EvaluateOutput_OK {
 		return getVal
 	}
 	pos := getVal.Value
-	fromVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem.From})
+	fromVal := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem.From})
 	if fromVal.Status != pb.EvaluateOutput_OK {
 		return fromVal
 	}
@@ -282,7 +282,7 @@ func (e evaluator) EvaluateElem(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	}
 }
 
-func (e evaluator) EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	call := input.Expr.Call
 	st := Find(input.DefStack, call.Ident)
 	if st == nil {
@@ -292,7 +292,7 @@ func (e evaluator) EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput {
 		}
 		args := map[string]*pb.Value{}
 		for argName, argExpr := range call.Args {
-			argVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: argExpr})
+			argVal := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: argExpr})
 			if argVal.Status != pb.EvaluateOutput_OK {
 				return argVal
 			}
@@ -306,22 +306,22 @@ func (e evaluator) EvaluateCall(input *pb.EvaluateInput) *pb.EvaluateOutput {
 		if !ok {
 			return errorArgumentMismatch(input.Expr.Path, argName)
 		}
-		argVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: arg})
+		argVal := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: arg})
 		if argVal.Status != pb.EvaluateOutput_OK {
 			return argVal
 		}
 		st = Register(st, NewDefinition(Append(input.Expr.Path, call.Ident, argName), argName, argVal.Value))
 	}
-	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: def.Body})
+	return e.Evaluate(&pb.EvaluateInput{DefStack: st, Expr: def.Body})
 }
 
-func (e evaluator) EvaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	cases := input.Expr.Cases.Cases
 	for _, case_ := range cases {
 		if case_.IsOtherwise {
-			return e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: case_.Otherwise})
+			return e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: case_.Otherwise})
 		} else {
-			boolVal := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: case_.When})
+			boolVal := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: case_.When})
 			if boolVal.Status != pb.EvaluateOutput_OK {
 				return boolVal
 			}
@@ -329,16 +329,16 @@ func (e evaluator) EvaluateCases(input *pb.EvaluateInput) *pb.EvaluateOutput {
 				return errorUnexpectedType(case_.When.Path, boolVal.Value.Type, []pb.Value_Type{pb.Value_BOOL})
 			}
 			if boolVal.Value.Bool {
-				return e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: case_.Then})
+				return e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: case_.Then})
 			}
 		}
 	}
 	return errorCasesNotExhaustive(Append(input.Expr.Path, "cases"))
 }
 
-func (e evaluator) EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	op := input.Expr.OpUnary
-	o := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Operand})
+	o := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Operand})
 	if o.Status != pb.EvaluateOutput_OK {
 		return o
 	}
@@ -392,13 +392,13 @@ func (e evaluator) EvaluateOpUnary(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	}
 }
 
-func (e evaluator) EvaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	op := input.Expr.OpBinary
-	ol := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Left})
+	ol := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Left})
 	if ol.Status != pb.EvaluateOutput_OK {
 		return ol
 	}
-	or := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Right})
+	or := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: op.Right})
 	if or.Status != pb.EvaluateOutput_OK {
 		return or
 	}
@@ -461,11 +461,11 @@ func (e evaluator) EvaluateOpBinary(input *pb.EvaluateInput) *pb.EvaluateOutput 
 	}
 }
 
-func (e evaluator) EvaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutput {
+func (e evaluator) evaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutput {
 	op := input.Expr.OpVariadic
 	var operands []*pb.Value
 	for _, elem := range op.Operands {
-		val := e.EvaluateExpr(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem})
+		val := e.Evaluate(&pb.EvaluateInput{DefStack: input.DefStack, Expr: elem})
 		if val.Status != pb.EvaluateOutput_OK {
 			return val
 		}
@@ -557,19 +557,6 @@ func (e evaluator) EvaluateOpVariadic(input *pb.EvaluateInput) *pb.EvaluateOutpu
 		}
 		return &pb.EvaluateOutput{Value: ObjValue(mergeVal)}
 	}
-}
-
-func (e evaluator) EvaluateRef(input *pb.EvaluateInput) *pb.EvaluateOutput {
-	ref := input.Expr.Ref
-	st := Find(input.DefStack, ref.Ident)
-	if st == nil {
-		ext, ok := e.config.Extension[ref.Ident]
-		if !ok {
-			return errorReferenceNotFound(input.Expr.Path, ref.Ident)
-		}
-		return ext(input.Expr.Path, map[string]*pb.Value{})
-	}
-	return e.EvaluateExpr(&pb.EvaluateInput{DefStack: st, Expr: st.Def.Body})
 }
 
 func errorIndexOutOfBounds(path *pb.Expr_Path, index *pb.Value, begin, end int) *pb.EvaluateOutput {

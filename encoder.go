@@ -32,7 +32,7 @@ func (d encoder) Encode(input *pb.EncodeInput) *pb.EncodeOutput {
 				ErrorMessage: fmt.Sprintf("fail to encode json: %+v", err),
 			}
 		}
-		return &pb.EncodeOutput{Result: b.String()}
+		return &pb.EncodeOutput{Text: b.String()}
 	case pb.EncodeInput_YAML:
 		b := bytes.NewBuffer(nil)
 		e := yaml.NewEncoder(b)
@@ -42,7 +42,7 @@ func (d encoder) Encode(input *pb.EncodeInput) *pb.EncodeOutput {
 				ErrorMessage: fmt.Sprintf("fail to encode yaml: %+v", err),
 			}
 		}
-		return &pb.EncodeOutput{Result: b.String()}
+		return &pb.EncodeOutput{Text: b.String()}
 	}
 }
 

@@ -47,7 +47,7 @@ func TestParser_Parse(t *testing.T) {
 	for _, name := range testcaseKeys {
 		testcase := testcases[name]
 		t.Run(name, func(t *testing.T) {
-			decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Yaml: testcase.YamlInput})
+			decodeResult := exprml.NewDecoder().Decode(&pb.DecodeInput{Text: testcase.YamlInput})
 			require.False(t, decodeResult.IsError)
 
 			parseResult := exprml.NewParser().Parse(&pb.ParseInput{Value: decodeResult.Value})
