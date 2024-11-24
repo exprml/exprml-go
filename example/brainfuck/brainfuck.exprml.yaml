@@ -1,0 +1,136 @@
+eval:
+  $brainfuck:
+    $pc: 0
+    $ptr: 0
+    $data: { $zeros: { $length: 1000 } }
+where:
+  - $zeros($length):
+      cases:
+        - when: { eq: [$length, 0] }
+          then: { arr: [] }
+        - otherwise:
+            flat:
+              arr:
+                - arr: [0]
+                - $zeros:
+                    $length: { sub: [$length, 1] }
+  - $push($array, $elem):
+      flat:
+        arr: [$array, { arr: [$elem] }]
+  - $pop($array):
+      for($i,$e): $array
+      do: $e
+      if: { lt: [$i, { sub: [len: $array, 1] }] }
+  - $top($array):
+      get: { sub: [len: $array, 1] }
+      from: $array
+  - $update($array, $index, $elem):
+      for($i,$e): $array
+      do:
+        cases:
+          - when: { eq: [$i, $index] }
+            then: $elem
+          - otherwise: $e
+  - $jump_table:
+      eval:
+        $make_jump_table:
+          $i: 0
+          $stack: { arr: [] }
+          $table:
+            $zeros:
+              $length: { len: $source }
+      where:
+        - $make_jump_table($i, $stack, $table):
+            cases:
+              - when:
+                  eq: [$i, len: $source]
+                then: $table
+              - otherwise:
+                  where:
+                    - $cmd: { get: $i, from: $source }
+                  eval:
+                    cases:
+                      - when:
+                          eq: [$cmd, "`[`"]
+                        then:
+                          $make_jump_table:
+                            $i: { add: [$i, 1] }
+                            $stack:
+                              $push: { $array: $stack, $elem: $i }
+                            $table: $table
+                      - when:
+                          eq: [$cmd, "`]`"]
+                        then:
+                          eval: $t2
+                          where:
+                            - $t0:
+                                $make_jump_table:
+                                  $i: { add: [$i, 1] }
+                                  $stack:
+                                    $pop: { $array: $stack }
+                                  $table: $table
+                            - $t1:
+                                $update:
+                                  $array: $t0
+                                  $index: $i
+                                  $elem: { $top: { $array: $stack } }
+                            - $t2:
+                                $update:
+                                  $array: $t1
+                                  $index: { $top: { $array: $stack } }
+                                  $elem: $i
+                      - otherwise:
+                          $make_jump_table:
+                            $i: { add: [$i, 1] }
+                            $stack: $stack
+                            $table: $table
+  - $brainfuck($pc, $ptr, $data):
+      cases:
+        - when:
+            eq: [$pc, len: $source]
+          then: 0
+        - otherwise:
+            where:
+              - $cmd: { get: $pc, from: $source }
+              - $val: { get: $ptr, from: $data }
+            eval:
+              $brainfuck:
+                $pc:
+                  cases:
+                    - when:
+                        and: [eq: [$cmd, "`[`"], eq: [$val, 0]]
+                      then: { get: $pc, from: $jump_table }
+                    - when:
+                        and: [eq: [$cmd, "`]`"], neq: [$val, 0]]
+                      then: { get: $pc, from: $jump_table }
+                    - otherwise:
+                        add: [$pc, 1]
+                $ptr:
+                  cases:
+                    - when:
+                        eq: [$cmd, "`>`"]
+                      then: { add: [$ptr, 1] }
+                    - when:
+                        eq: [$cmd, "`<`"]
+                      then: { sub: [$ptr, 1] }
+                    - otherwise: $ptr
+                $data:
+                  $update:
+                    $array: $data
+                    $index: $ptr
+                    $elem:
+                      cases:
+                        - when:
+                            eq: [$cmd, "`+`"]
+                          then: { add: [$val, 1] }
+                        - when:
+                            eq: [$cmd, "`-`"]
+                          then: { sub: [$val, 1] }
+                        - when:
+                            eq: [$cmd, "`,`"]
+                          then: $input
+                        - when:
+                            eq: [$cmd, "`.`"]
+                          then:
+                            $output: { $value: $val }
+                        - otherwise: $val
